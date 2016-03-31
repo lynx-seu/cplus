@@ -1,12 +1,13 @@
 #general
-CC = clang++
-CPPFLAGS = -g -O2 -Wall -std=c++11 
+CC = g++
+CPPFLAGS = -O2 -Wall -std=c++11 
 LDFLAGS= 
 
 
-#
-SRCS = $(wildcard *.cpp)
-OBJS = $(SRCS:%.cpp=%.o)
+# #
+# SRCS = $(wildcard *.cpp)
+# OBJS = $(SRCS:%.cpp=%.o)
+OBJS = logic.o main.o 
 
 
 #target

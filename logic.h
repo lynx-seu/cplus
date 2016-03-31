@@ -1,20 +1,27 @@
 #ifndef LOGIC_H_
 #define LOGIC_H_
 
-#include "Loki/Pimpl.h"
 
-namespace hxl
-{
+#include <set>
+#include <vector>
+#include <memory>
+
+namespace hxl {
+
 	class Dlx
 	{
 	public:
-		Dlx(char **matrix, int row, int col);
+		Dlx(const char **matrix, int row);
+		~Dlx();
 
 		void Dance();
+		std::vector<std::set<int> > GetRes() const;
 	private:
-		Loki::PimpleOf<Dlx>::Type dlx_;
+		class Impl;
+		std::unique_ptr<Impl> pImpl;
 	};
-};
+
+}
 
 
 #endif
