@@ -11,11 +11,10 @@ namespace hxl {
 	class Dlx
 	{
 	public:
-		Dlx(const char **matrix, int row);
+		Dlx(int *matrix, int row, int col);
 		~Dlx();
 
 		void Dance();
-		std::vector<std::set<int> > GetRes() const;
 	private:
 		class Impl;
 		std::unique_ptr<Impl> pImpl;

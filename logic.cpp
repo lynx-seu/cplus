@@ -5,211 +5,156 @@
 #include <algorithm>
 #include <assert.h>
 #include <string.h>
+#include <limits.h>
 
 namespace hxl {
 
-	//////////////////////////////////////////////////////////////////////////
-	// Dlx Impl
 	class Dlx::Impl
 	{
-	public:
 		friend class Dlx;
 
-		struct Node
+		struct data_object //A module in the sparse matrix data structure.
 		{
-			Node(int r = -1, int c = -1): r(r), c(c) {}
-			void Set(Node *u, Node *r, Node *d, Node *l)
-			{ U = u; R = r; D = d; L = l; }
-
-			int r, c;
-			struct Node *U, *R, *D, *L;
+			data_object* L;                //Link to next object left.
+			data_object* R;                //         "          right.
+			data_object* U;                //         "          up.
+			data_object* D;                //         "          down.
+			data_object* C;                //Link to column header.
+			int x;                         //In a column header: number of ones 
+												//in the column. Otherwise: row index.
+			void cover()                   //Covers a column.
+			{
+				data_object* i=D;
+				data_object* j;
+				R->L=L; L->R=R;
+				while (i!=this)
+				{
+					j=i->R;
+					while (j!=i)
+					{
+						j->D->U=j->U; j->U->D=j->D;
+						j->C->x--;
+						j=j->R;
+					}
+					i=i->D;
+				}
+			}
+			void uncover()                 //Uncovers a column.
+			{
+				data_object* i=U;
+				data_object* j;
+				while (i!=this)
+				{
+					j=i->L;
+					while (j!=i)
+					{
+						j->C->x++;
+						j->D->U=j; j->U->D=j;
+						j=j->L;
+					}
+					i=i->U;
+				}
+				R->L=this; L->R=this;
+			}
 		};
-		typedef std::function<void (Node *)> FUNC;
 
-		Impl(const char **matrix, int row) :pHead_(new Node)
-		{
-			int col = 0;
-			for (int r=0; r<row; r++)
-			{
-				int c = strlen(matrix[r]);
-				if (col < c) col = c;
-			}
-			colHeadArr_.resize(col, 0);
-			colCount_.resize(col, 0);
-
-			pHead_->Set(pHead_, pHead_, pHead_, pHead_);
-			for (int c=0; c<col; c++)
-			{
-				Node *pNode = new Node(-1, c);
-				pNode->Set(pNode, pHead_, pNode, pHead_->L);
-				pNode->R->L = pNode; pNode->L->R = pNode;
-				colHeadArr_.at(c) = pNode;
-			}
-
-			for (int r=0; r<row; r++)
-			{
-				bool first = true;
-				Node *pRowHead = 0;
-				for (int c=0; c<col; c++)
-				{
-					char ch = matrix[r][c];
-					assert(ch == '0' || ch == '1');
-
-					if (ch == '0') continue;
-					Node *pColHead = colHeadArr_.at(c);
-					Node *pNode = new Node(r, c);
-					if (first)
-					{
-						first = false;
-						pRowHead = pNode;
-						pNode->Set(pColHead->U, pNode, pColHead, pNode);
-					}
-					else
-					{
-						pNode->Set(pColHead->U, pRowHead, pColHead, pRowHead->L);
-						pNode->R->L = pNode; pNode->L->R = pNode;
-					}
-					pNode->U->D = pNode; pNode->D->U = pNode;
-
-					colCount_[c]++;
-				}
-			}
-		}
-
-		~Impl() 
-		{
-			ReleaseNode(pHead_);
-			std::for_each(colHeadArr_.begin(), colHeadArr_.end(), [&](Node *node) {
-				Node *d = node->D;
-				while (d != node) 
-				{
-					Node *tmp = d->D;
-					ReleaseNode(d);
-					d = tmp;
-				}
-				ReleaseNode(node);
-			});
-		}
-
-		void Dance ()
-		{
-			static std::set<int> res;
-
-			if (pHead_->R == pHead_)
-			{
-				res_.push_back(res);
-				res.clear();
-				return;
-			}
-
-			int col = GetMinCol();
-			Remove(col);
-
-			Node *pColHead = colHeadArr_.at(col);
-			Node *d = pColHead->D;
-			while (d != pColHead)
-			{
-				res.insert(d->r);
-				Node *dr = d->R;
-				while (dr != d) { Remove(dr->c); dr = dr->R; }
-
-				Dance();
-
-				res.erase(d->r);
-				dr = d->R;
-				while (dr != d) { Resume(dr->c); dr = dr->R; }
-				d = d->D;
-			}
-
-			Resume(col);
-		}
+		Impl(int *matrix, int rows, int cols);
+		~Impl();
+		void Search(int k);
+		static data_object* DLX_Knuth_S_heuristic(data_object* root);
 
 	private:
-
-		static inline void ReleaseNode(Node *node)
-		{
-			if (node)
-			{
-				delete node;
-				node = 0;
-			}
-		}
-
-		static inline void ForEach(Node *node, const FUNC& func)
-		{
-			Node *d = node->D;
-			while (d != node)
-			{
-				Node *dr = d->R;
-				while (dr != d)
-				{
-					func(dr);
-					dr = dr->R;
-				}
-
-				d = d->D;
-			}
-
-		}
-
-		inline int GetMinCol() const
-		{
-			int min = 0xFFFFFF, col=0;
-
-			Node *r = pHead_->R;
-			while (r != pHead_)
-			{
-				int cnt = colCount_.at(r->c);
-				if (min > cnt)
-				{
-					min = cnt;
-					col = r->c;
-				}
-				if (min <= 1) break;
-
-				r = r->R;
-			}
-
-			return col;
-		}
-
-		void Remove(int col)
-		{
-			Node *pColHead = colHeadArr_[col];
-			pColHead->R->L = pColHead->L; pColHead->L->R = pColHead->R;
-
-			FUNC f2 = [&, col] (Node *node)
-			{
-				colCount_[col]--;
-				node->D->U = node->U; node->U->D = node->D;
-			};
-			ForEach(pColHead, f2);
-		}
-
-		void Resume(int col)
-		{
-			Node *pColHead = colHeadArr_[col];
-
-			FUNC f2 = [&, col] (Node *node)
-			{
-				colCount_[col] ++;
-				node->D->U = node; node->U->D = node;
-			};
-			ForEach(pColHead, f2);
-
-			pColHead->R->L = pColHead; pColHead->L->R = pColHead;
-		}
-
-	private:
-		Node *pHead_;
-		std::vector<Node *> colHeadArr_;
-		std::vector<int>    colCount_;
-		std::vector<std::set<int> > res_;
+		data_object *root_;			//root
 	};
 
+	Dlx::Impl::Impl(int *matrix, int rows, int cols)
+		: root_ (new data_object)
+	{
+		data_object *P = root_, *Q;
+		//array of pointers to column headers
+		data_object** walkers=new data_object*[cols];
+
+		for (int i=0; i<cols; i++)
+		{
+			(P->R=new data_object)->L = P;
+			walkers[i] = Q = P = P->R;
+			P->x = 0;
+			for (int j=0; j<rows; j++)
+				if (matrix[i+cols*j])
+				{
+					(Q->D=new data_object)->U = Q;
+					Q = Q->D;
+					Q->C = P; P->x++;
+					Q->x = j;
+				}
+			Q->D = P; P->U = Q;
+		}
+		P->R = root_; root_->L = P;
+		//eliminate empty columns
+		P=root_;
+		for (int i=0; i<cols; i++)
+		{
+			P=P->R;
+			if (!P->x)
+			{
+				P->L->R=P->R;
+				P->R->L=P->L;
+			}
+		}
+		//now construct the L/R links for the data objects.
+		P=new data_object;
+		for (int i=0; i<rows; i++)
+		{
+			Q=P;
+			for (int j=0; j<cols; j++)
+				if (matrix[j+cols*i]) //a one
+				{
+					//in _this_ row...
+					walkers[j]=walkers[j]->D;
+					//create L/R links
+					(Q->R=walkers[j])->L=Q;
+					//advance pointer
+					Q=Q->R;
+				}
+				if (Q==P) continue;
+				Q->R=P->R;       //link it to the first one in this row.
+				P->R->L=Q;       //link the first one to the last one.
+		}
+		delete P;                //P is no longer needed
+		delete walkers;          //walkers are no longer needed
+
+	}
+
+	Dlx::Impl::~Impl()
+	{
+
+	}
+
+	void Dlx::Impl::Search(int k)
+	{
+
+	}
+
+	Dlx::Impl::data_object* Dlx::Impl::DLX_Knuth_S_heuristic(Dlx::Impl::data_object* root)
+	{
+		data_object* P=root->R;
+		data_object* res;
+		int best=INT_MAX/2;
+		while (P!=root)
+		{
+			if (P->x<best)
+			{
+				best=P->x;
+				res=P;
+			}
+			P=P->R;
+		}
+		return res;
+	}
+
 	//////////////////////////////////////////////////////////////////////////
-	Dlx::Dlx(const char **matrix, int row)
-		: pImpl(new Impl(matrix, row))
+	Dlx::Dlx(int *matrix, int rows, int cols)
+		: pImpl(new Impl(matrix, rows, cols))
 	{
 
 	}
@@ -221,12 +166,7 @@ namespace hxl {
 
 	void Dlx::Dance()
 	{
-		pImpl->Dance();
-	}
-
-	std::vector<std::set<int> > Dlx::GetRes() const
-	{
-		return pImpl->res_;
+		pImpl->Search(0);
 	}
 
 } // end namespace hxl
