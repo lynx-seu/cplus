@@ -1,14 +1,12 @@
 #general
 CC = g++
-CPPFLAGS = -O2 -Wall -std=c++11 
+CPPFLAGS = -g -Wall -O2 -std=c++11 
 LDFLAGS= 
 
 
 # #
-# SRCS = $(wildcard *.cpp)
-# OBJS = $(SRCS:%.cpp=%.o)
-OBJS = logic.o main.o 
-
+SRCS = $(wildcard *.cpp)
+OBJS = $(SRCS:%.cpp=%.o)
 
 #target
 .PHONY: main clean

@@ -1,10 +1,5 @@
-#include "logic.h"
-#include <set>
-#include <vector>
-#include <functional>
-#include <algorithm>
+#include "dlx.h"
 #include <assert.h>
-#include <string.h>
 #include <limits.h>
 
 namespace hxl {
@@ -58,20 +53,22 @@ namespace hxl {
 			}
 		};
 
+	public:
 		Impl(int *matrix, int rows, int cols);
 		~Impl();
-		void Search(int k);
-		static data_object* DLX_Knuth_S_heuristic(data_object* root);
+		template<class FUNC1> void Search(int k, Dlx::FUNC func, FUNC1 choose_column);
+		static data_object* Knuth_S_heuristic(data_object* root);
 
 	private:
 		data_object *root_;			//root
+		int *res_;					//auxiliary stack for recursion
 	};
 
 	Dlx::Impl::Impl(int *matrix, int rows, int cols)
 		: root_ (new data_object)
 	{
+		res_ = new int[rows];
 		data_object *P = root_, *Q;
-		//array of pointers to column headers
 		data_object** walkers=new data_object*[cols];
 
 		for (int i=0; i<cols; i++)
@@ -90,17 +87,19 @@ namespace hxl {
 			Q->D = P; P->U = Q;
 		}
 		P->R = root_; root_->L = P;
-		//eliminate empty columns
-		P=root_;
-		for (int i=0; i<cols; i++)
-		{
-			P=P->R;
-			if (!P->x)
-			{
-				P->L->R=P->R;
-				P->R->L=P->L;
-			}
-		}
+
+        //eliminate empty columns
+        // P=root_;
+        // for (int i=0; i<cols; i++)
+        // {
+        //     P=P->R;
+        //     if (!P->x)
+        //     {
+        //         P->L->R=P->R;
+        //         P->R->L=P->L;
+        //     }
+        // }
+
 		//now construct the L/R links for the data objects.
 		P=new data_object;
 		for (int i=0; i<rows; i++)
@@ -116,29 +115,76 @@ namespace hxl {
 					//advance pointer
 					Q=Q->R;
 				}
-				if (Q==P) continue;
-				Q->R=P->R;       //link it to the first one in this row.
-				P->R->L=Q;       //link the first one to the last one.
+
+			if (Q==P) continue;
+			Q->R=P->R;       //link it to the first one in this row.
+			P->R->L=Q;       //link the first one to the last one.
 		}
 		delete P;                //P is no longer needed
-		delete walkers;          //walkers are no longer needed
+		delete []walkers;          //walkers are no longer needed
 
 	}
 
 	Dlx::Impl::~Impl()
 	{
+		data_object *P = root_->R, *Q;
+		while (P != root_)
+		{
+			Q = P->D;
+			while (Q != P)
+			{
+				Q = Q->D;
+				delete Q->U;
+			}
+			P = P->R;
+			delete P->L;
+		}
+		delete root_;
 
+		delete []res_;
 	}
 
-	void Dlx::Impl::Search(int k)
+	template<class FUNC1>
+	void Dlx::Impl::Search(int k, Dlx::FUNC send_row, FUNC1 choose_column)
 	{
-
+		data_object *r,*c,*j;
+		if (root_->R==root_) //done - solution found
+		{
+			for (int i=0; i<k; i++)
+				send_row(res_[i]);
+			send_row(Dlx::nullrow);
+			return;
+		}
+		//otherwise
+		c=choose_column(root_); //choose a column to cover
+		c->cover();         //cover it
+		r=c->D;
+		while (r!=c)
+		{
+			res_[k] = r->x;
+			j=r->R;
+			while (j!=r)
+			{
+				j->C->cover();
+				j=j->R;
+			}
+			Search(k+1, send_row, choose_column);
+			//set r <- O[k], and c<- C[r], this is unnecessary
+			j=r->L;
+			while (j!=r)
+			{
+				j->C->uncover();
+				j=j->L;
+			}
+			r=r->D;
+		}
+		c->uncover();
 	}
 
-	Dlx::Impl::data_object* Dlx::Impl::DLX_Knuth_S_heuristic(Dlx::Impl::data_object* root)
+	Dlx::Impl::data_object* Dlx::Impl::Knuth_S_heuristic(Dlx::Impl::data_object* root)
 	{
 		data_object* P=root->R;
-		data_object* res;
+		data_object* res = 0;
 		int best=INT_MAX/2;
 		while (P!=root)
 		{
@@ -164,9 +210,9 @@ namespace hxl {
 
 	}
 
-	void Dlx::Dance()
+	void Dlx::Dance(FUNC send_row)
 	{
-		pImpl->Search(0);
+		pImpl->Search(0, send_row, Dlx::Impl::Knuth_S_heuristic);
 	}
 
 } // end namespace hxl
